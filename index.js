@@ -2,6 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 require('dotenv').config();
 
 const app = express();
@@ -9,13 +10,28 @@ const app = express();
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Database connection
-mongoose.connect(process.env.MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
+// Determine uploads directory based on environment
+const UPLOADS_DIR = process.env.AWS_LAMBDA_FUNCTION_NAME 
+  ? '/tmp/uploads' 
+  : path.join(__dirname, 'uploads');
+
+// Create uploads directory if it doesn't exist
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+
+// Create brochures subdirectory
+const brochuresDir = path.join(UPLOADS_DIR, 'brochures');
+if (!fs.existsSync(brochuresDir)) {
+  fs.mkdirSync(brochuresDir, { recursive: true });
+}
+
+// Serve static files from the appropriate directory
+app.use('/uploads', express.static(UPLOADS_DIR));
+
+// Database connection - remove deprecated options
+mongoose.connect(process.env.MONGODB_URI)
 .then(() => console.log('MongoDB connected'))
 .catch(err => console.error('MongoDB connection error:', err));
 
@@ -29,19 +45,13 @@ app.use('/api/materials', require('./routes/materials'));
 app.use('/api/announcements', require('./routes/announcements'));
 app.use('/api/brochures', require('./routes/brochures'));
 
-// Create uploads directory if it doesn't exist
-const fs = require('fs');
-const uploadsDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir);
-}
+// Export for serverless environments
+module.exports = app;
 
-const brochuresDir = path.join(__dirname, 'uploads', 'brochures');
-if (!fs.existsSync(brochuresDir)) {
-  fs.mkdirSync(brochuresDir, { recursive: true });
+// Only listen if not in Lambda environment
+if (!process.env.AWS_LAMBDA_FUNCTION_NAME) {
+  const PORT = process.env.PORT || 3001;
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
 }
-
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
